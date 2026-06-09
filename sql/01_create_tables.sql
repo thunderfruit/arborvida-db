@@ -1,0 +1,223 @@
+-- ============================================================
+-- ArborVida Foundation
+-- Community Reforestation Management System
+-- Phase 5: Physical Design — DDL Script
+-- Author: thunderfruit
+-- Date: June 2026
+-- DBMS: PostgreSQL 16
+-- Schema: rfo
+-- ============================================================
+
+-- Run this first in psql or pgAdmin:
+-- CREATE DATABASE arborvida;
+-- Then connect to arborvida and run the rest.
+
+CREATE SCHEMA IF NOT EXISTS rfo;
+SET search_path TO rfo;
+
+-- ============================================================
+-- BLOCK 1: INDEPENDENT TABLES (no foreign keys)
+-- Create these first — other tables depend on them.
+-- ============================================================
+
+CREATE TABLE organization (
+    org_id       SERIAL          PRIMARY KEY,
+    name         VARCHAR(200)    NOT NULL UNIQUE,
+    country      VARCHAR(100)    NOT NULL,
+    founded_date DATE,
+    website      VARCHAR(300),
+
+    CONSTRAINT chk_org_name_length
+        CHECK (LENGTH(name) >= 2)
+);
+
+COMMENT ON TABLE organization IS
+    'Foundation branches or partner organizations managing reforestation zones.';
+
+-- ------------------------------------------------------------
+
+CREATE TABLE species (
+    species_id      SERIAL          PRIMARY KEY,
+    scientific_name VARCHAR(200)    NOT NULL UNIQUE,
+    common_name     VARCHAR(200)    NOT NULL,
+    native_region   VARCHAR(200),
+    growth_rate     VARCHAR(10)
+                    CHECK (growth_rate IN ('slow', 'medium', 'fast')),
+
+    CONSTRAINT chk_scientific_name_length
+        CHECK (LENGTH(scientific_name) >= 5)
+);
+
+COMMENT ON TABLE species IS
+    'Standardized tree species catalog. Scientific name enforces uniqueness
+     and avoids regional naming ambiguity (see Phase 2, BR04).';
+
+-- ------------------------------------------------------------
+
+CREATE TABLE volunteer (
+    volunteer_id SERIAL          PRIMARY KEY,
+    dni          CHAR(8)         NOT NULL UNIQUE,
+    name         VARCHAR(100)    NOT NULL,
+    email        VARCHAR(200)    UNIQUE,
+    phone        VARCHAR(20),
+    join_date    DATE            NOT NULL DEFAULT CURRENT_DATE,
+
+    CONSTRAINT chk_dni_numeric
+        CHECK (dni ~ '^[0-9]{8}$')
+);
+
+COMMENT ON TABLE volunteer IS
+    'People who participate in planting events. DNI is the national ID number.';
+
+-- ============================================================
+-- BLOCK 2: TABLES WITH FKs TO BLOCK 1
+-- ============================================================
+
+CREATE TABLE zone (
+    zone_id       SERIAL          PRIMARY KEY,
+    org_id        INTEGER         NOT NULL
+                                  REFERENCES organization(org_id)
+                                  ON DELETE RESTRICT
+                                  ON UPDATE CASCADE,
+    name          VARCHAR(200)    NOT NULL,
+    region        VARCHAR(200)    NOT NULL,
+    area_hectares NUMERIC(10,2)   CHECK (area_hectares > 0),
+    latitude      NUMERIC(9,6),
+    longitude     NUMERIC(9,6),
+
+    CONSTRAINT chk_latitude_range
+        CHECK (latitude BETWEEN -90 AND 90),
+    CONSTRAINT chk_longitude_range
+        CHECK (longitude BETWEEN -180 AND 180)
+);
+
+COMMENT ON TABLE zone IS
+    'Geographic areas for planting. Belongs to exactly one organization.
+     ON DELETE RESTRICT: cannot delete an organization that has zones.';
+
+-- ------------------------------------------------------------
+
+CREATE TABLE planting_event (
+    event_id           SERIAL          PRIMARY KEY,
+    zone_id            INTEGER         NOT NULL
+                                       REFERENCES zone(zone_id)
+                                       ON DELETE RESTRICT
+                                       ON UPDATE CASCADE,
+    event_date         DATE            NOT NULL,
+    name               VARCHAR(200),
+    weather_conditions VARCHAR(100),
+    total_trees        INTEGER         NOT NULL
+                                       CHECK (total_trees > 0),
+
+    CONSTRAINT chk_event_date_not_future
+        CHECK (event_date <= CURRENT_DATE)
+);
+
+COMMENT ON TABLE planting_event IS
+    'Individual planting campaign in a specific zone.
+     ON DELETE RESTRICT: cannot delete a zone that has events.
+     total_trees is valid denormalization — recorded in field before
+     species breakdown is completed in event_species.';
+
+-- ============================================================
+-- BLOCK 3: N:M INTERMEDIATE TABLES
+-- ============================================================
+
+CREATE TABLE event_species (
+    event_id      INTEGER         NOT NULL
+                                  REFERENCES planting_event(event_id)
+                                  ON DELETE RESTRICT
+                                  ON UPDATE CASCADE,
+    species_id    INTEGER         NOT NULL
+                                  REFERENCES species(species_id)
+                                  ON DELETE RESTRICT
+                                  ON UPDATE CASCADE,
+    trees_planted INTEGER         NOT NULL
+                                  CHECK (trees_planted > 0),
+
+    CONSTRAINT pk_event_species
+        PRIMARY KEY (event_id, species_id)
+);
+
+COMMENT ON TABLE event_species IS
+    'Resolves N:M between planting_event and species.
+     Composite PK prevents the same species being registered twice per event.
+     ON DELETE RESTRICT on both FKs: preserves planting history.
+     Referenced by monitoring via composite FK.';
+
+-- ------------------------------------------------------------
+
+CREATE TABLE participation (
+    participation_id SERIAL      PRIMARY KEY,
+    event_id         INTEGER     NOT NULL
+                                 REFERENCES planting_event(event_id)
+                                 ON DELETE RESTRICT
+                                 ON UPDATE CASCADE,
+    volunteer_id     INTEGER     NOT NULL
+                                 REFERENCES volunteer(volunteer_id)
+                                 ON DELETE RESTRICT
+                                 ON UPDATE CASCADE,
+    role             VARCHAR(100),
+    hours_worked     NUMERIC(5,2) CHECK (hours_worked > 0),
+
+    CONSTRAINT uq_volunteer_per_event
+        UNIQUE (event_id, volunteer_id)
+);
+
+COMMENT ON TABLE participation IS
+    'Resolves N:M between planting_event and volunteer.
+     UNIQUE(event_id, volunteer_id) enforces one registration per volunteer per event.
+     Surrogate PK allows future tables to reference this record.';
+
+-- ============================================================
+-- BLOCK 4: MONITORING
+-- References composite FK from event_species.
+-- Must be created AFTER event_species.
+-- ============================================================
+
+CREATE TABLE monitoring (
+    monitoring_id   SERIAL          PRIMARY KEY,
+    event_id        INTEGER         NOT NULL,
+    species_id      INTEGER         NOT NULL,
+    monitoring_date DATE            NOT NULL,
+    survival_rate   NUMERIC(5,2)    NOT NULL
+                                    CHECK (survival_rate BETWEEN 0 AND 100),
+    notes           TEXT,
+
+    CONSTRAINT fk_monitoring_event_species
+        FOREIGN KEY (event_id, species_id)
+        REFERENCES event_species(event_id, species_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_monitoring_date_valid
+        CHECK (monitoring_date >= CURRENT_DATE - INTERVAL '10 years')
+);
+
+COMMENT ON TABLE monitoring IS
+    'Survival rate checks after planting.
+     Composite FK (event_id, species_id) references event_species — enforces
+     business rule BR06: only planted species can be monitored.
+     NUMERIC(5,2) used instead of FLOAT to avoid floating-point imprecision.';
+
+-- ============================================================
+-- BLOCK 5: MULTIVALUED ATTRIBUTE
+-- ============================================================
+
+CREATE TABLE volunteer_certification (
+    volunteer_id   INTEGER         NOT NULL
+                                   REFERENCES volunteer(volunteer_id)
+                                   ON DELETE CASCADE
+                                   ON UPDATE CASCADE,
+    certification  VARCHAR(200)    NOT NULL,
+    year_obtained  INTEGER
+                   CHECK (year_obtained BETWEEN 2000 AND 2030),
+
+    CONSTRAINT pk_volunteer_certification
+        PRIMARY KEY (volunteer_id, certification)
+);
+
+COMMENT ON TABLE volunteer_certification IS
+    'Certifications held by volunteers — multivalued attribute of volunteer.
+     Composite PK prevents duplicate certifications per volunteer.
+     ON DELETE CASCADE: if a volunteer is deleted, their certifications go too.';
