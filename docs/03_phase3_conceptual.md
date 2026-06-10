@@ -39,3 +39,49 @@ ER diagram in Crow's Foot notation (see `diagrams/er_diagram.png`)
   to enforce the constraint that only planted species can be monitored.
 - VOLUNTEER_CERTIFICATION uses a composite PK (volunteer_id,
   certification) to prevent duplicate certifications per volunteer.
+# Phase 3 — Conceptual Design (Updated)
+
+## Update Note
+This document was updated after the original Phase 3 to incorporate
+the generalization/specialization relationship identified during
+the Phase 4 logical design review.
+
+---
+
+## Original content remains unchanged above this section.
+
+---
+
+## Addition: Generalization / Specialization
+
+During Phase 4 mapping, a generalization/specialization relationship
+was identified in the VOLUNTEER entity. ArborVida Foundation has two
+distinct categories of volunteers with different data requirements.
+
+### Supertype
+VOLUNTEER — stores all shared attributes applicable to every volunteer.
+
+### Subtypes
+TECHNICAL_VOLUNTEER — volunteers with formal technical qualifications:
+- specialty: area of technical expertise (Botanist, Field Coordinator, etc.)
+- certification_level: entry / intermediate / expert
+
+GENERAL_VOLUNTEER — volunteers without formal technical qualifications:
+- availability_hours: monthly availability in hours
+
+### Constraints
+- **Total:** every volunteer must belong to exactly one subtype
+- **Disjoint:** a volunteer cannot belong to both subtypes simultaneously
+
+### Notation in diagram
+StarUML ER notation does not include a native generalization arrow.
+The relationship is represented using dashed lines with the label
+"inheritance Total, Disjoint" connecting VOLUNTEER to each subtype.
+
+### Updated entity count
+Original diagram: 8 entities (organization, zone, species,
+planting_event, volunteer, participation, event_species, monitoring)
++ 1 multivalued attribute table (volunteer_certification)
+
+Updated diagram: adds 2 subtype entities (technical_volunteer,
+general_volunteer) → total 11 tables in the physical model.

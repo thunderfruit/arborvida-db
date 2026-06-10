@@ -38,18 +38,22 @@ reporting on campaign effectiveness.
 
 ## Database Schema
 
-**9 tables** organized across 3 dependency layers:
+**11 tables** organized across 4 dependency layers:
 
-    Layer 1 (independent):   organization, species, volunteer
-    Layer 2 (1:N FKs):       zone, planting_event
-    Layer 3 (N:M + special): event_species, participation,
-                              monitoring, volunteer_certification
+    Layer 1 (independent):        organization, species, volunteer
+    Layer 2 (specialization):     technical_volunteer, general_volunteer
+    Layer 3 (1:N FKs):            zone, planting_event
+    Layer 4 (N:M + monitoring):   event_species, participation,
+                                   monitoring, volunteer_certification
 
 **Entity-Relationship Diagram:**
 
 ![ER Diagram](diagrams/er_diagram.jpg)
 
 **Key design decisions:**
+
+- VOLUNTEER specializes into TECHNICAL_VOLUNTEER and GENERAL_VOLUNTEER
+  using Strategy B (subtype tables), with Total + Disjoint constraints.
 
 - EVENT_SPECIES uses a composite PK (event_id, species_id) because
   MONITORING references it with a composite FK, enforcing that only
@@ -64,24 +68,28 @@ reporting on campaign effectiveness.
 - All FKs on historical data use ON DELETE RESTRICT to prevent
   accidental deletion of reforestation records.
 
+- Trigger trg_monitoring_date_valid enforces semantic integrity:
+  monitoring_date cannot be earlier than the planting event_date.
+
 ---
 
 ## Project Structure
 
     arborvida-db/
     ├── docs/
-    │   ├── 01_phase1_planning.md
-    │   ├── 02_phase2_requirements.md
-    │   ├── 03_phase3_conceptual.md
-    │   └── 04_phase4_logical.md
+    │   ├── 01_phase1_planning.md        Phase 1: Planning
+    │   ├── 02_phase2_requirements.md    Phase 2: Requirements analysis
+    │   ├── 03_phase3_conceptual.md      Phase 3: Conceptual design
+    │   ├── 04_phase4_logical.md         Phase 4: Logical design
+    │   └── 05_phase5_physical.md        Phase 5: Physical design
     ├── diagrams/
-    │   └── er_diagram.jpg
+    │   └── er_diagram.jpg               Crow's Foot ER diagram
     ├── sql/
-    │   ├── 01_create_tables.sql
-    │   ├── 02_insert_data.sql
-    │   ├── 03_verification_queries.sql
-    │   ├── 04_users_permissions.sql
-    │   └── 05_backup.sh
+    │   ├── 01_create_tables.sql         DDL — all 11 tables + trigger
+    │   ├── 02_insert_data.sql           Sample data
+    │   ├── 03_verification_queries.sql  Business queries + constraint tests
+    │   ├── 04_users_permissions.sql     Roles and users
+    │   └── 05_backup.sh                 Backup script
     └── backup/
 
 ---
@@ -125,19 +133,34 @@ Average survival rate per species:
     GROUP BY s.common_name
     ORDER BY avg_survival DESC;
 
+Volunteers with their subtype (specialization query):
+
+    SELECT v.name,
+           CASE
+               WHEN tv.volunteer_id IS NOT NULL THEN 'Technical'
+               WHEN gv.volunteer_id IS NOT NULL THEN 'General'
+           END AS subtype,
+           tv.specialty,
+           tv.certification_level,
+           gv.availability_hours
+    FROM volunteer v
+    LEFT JOIN technical_volunteer tv ON v.volunteer_id = tv.volunteer_id
+    LEFT JOIN general_volunteer gv ON v.volunteer_id = gv.volunteer_id
+    ORDER BY v.name;
+
 ---
 
 ## Database Lifecycle Phases
 
-| Phase | Description |
-|---|---|
-| 1. Planning | Project scope, objectives, feasibility |
-| 2. Requirements | Functional/non-functional requirements, business rules |
-| 3. Conceptual Design | ER diagram in Crow's Foot notation |
-| 4. Logical Design | Relational schema via Navathe 7-step mapping |
-| 5. Physical Design | SQL DDL with data types and constraints |
-| 6. Implementation | Data population and integrity verification |
-| 7. Maintenance | Users, permissions, backup |
+| Phase | Description | Output |
+|---|---|---|
+| 1. Planning | Project scope, objectives, feasibility | docs/01_phase1_planning.md |
+| 2. Requirements | Functional/non-functional requirements, business rules | docs/02_phase2_requirements.md |
+| 3. Conceptual Design | ER diagram in Crow's Foot notation | diagrams/er_diagram.jpg |
+| 4. Logical Design | Relational schema via Navathe 7-step mapping | docs/04_phase4_logical.md |
+| 5. Physical Design | SQL DDL with data types, constraints, trigger | docs/05_phase5_physical.md |
+| 6. Implementation | Data population and integrity verification | sql/02_insert_data.sql |
+| 7. Maintenance | Users, permissions, backup | sql/04_users_permissions.sql |
 
 ---
 

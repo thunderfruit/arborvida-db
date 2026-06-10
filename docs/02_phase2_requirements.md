@@ -262,3 +262,33 @@ The DBA receives an FK violation error.
 
 These are academic estimates. A production system would require
 capacity planning based on real campaign data from the foundation.
+## Addition to Phase 2 — Volunteer Specialization Requirements
+
+This section was added after the initial Phase 2 document to capture
+requirements identified during conceptual modeling.
+
+---
+
+### New Functional Requirement
+
+FR-09: The system must distinguish between technical volunteers and
+general volunteers, storing different attributes for each subtype.
+
+- Technical volunteers have a specialty area and a certification level
+  (entry, intermediate, or expert).
+- General volunteers declare their monthly availability in hours.
+- Every volunteer must be classified as one or the other (Total constraint).
+- A volunteer cannot be both technical and general (Disjoint constraint).
+
+### New Business Rule
+
+BR-08 (Volunteer classification): Every volunteer registered in the
+system must belong to exactly one volunteer subtype: either
+TECHNICAL_VOLUNTEER or GENERAL_VOLUNTEER. A volunteer cannot belong
+to both subtypes simultaneously.
+
+### Impact on Data Model
+This requirement introduces a generalization/specialization relationship
+on the VOLUNTEER entity, mapped in Phase 4 using Strategy B (subtype
+tables) and implemented in Phase 5 as two new tables:
+technical_volunteer and general_volunteer.
