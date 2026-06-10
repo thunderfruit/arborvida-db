@@ -70,7 +70,54 @@ COMMENT ON TABLE volunteer IS
     'People who participate in planting events. DNI is the national ID number.';
 
 -- ============================================================
--- BLOCK 2: TABLES WITH FKs TO BLOCK 1
+-- BLOCK 2: SPECIALIZATION TABLES (Strategy B — subtype tables)
+-- Each subtype stores only its own attributes + PK/FK to supertype.
+-- Total constraint: every volunteer must appear in one subtype table.
+-- Disjoint constraint: a volunteer cannot appear in both subtype tables.
+-- ============================================================
+ 
+CREATE TABLE technical_volunteer (
+    volunteer_id       INTEGER         PRIMARY KEY
+                                       REFERENCES volunteer(volunteer_id)
+                                       ON DELETE CASCADE
+                                       ON UPDATE CASCADE,
+    specialty          VARCHAR(100)    NOT NULL,
+    certification_level VARCHAR(20)   NOT NULL
+                                       CHECK (certification_level IN ('entry', 'intermediate', 'expert')),
+ 
+    CONSTRAINT chk_specialty_not_empty
+        CHECK (LENGTH(TRIM(specialty)) > 0)
+);
+ 
+COMMENT ON TABLE technical_volunteer IS
+    'Subtype of volunteer. Technical volunteers have a defined specialty
+     (e.g. Botanist, Field Coordinator) and a certification level.
+     Strategy B: stores only subtype attributes + PK/FK to volunteer.
+     ON DELETE CASCADE: if the volunteer is deleted, their subtype record
+     is also deleted.';
+
+-- ------------------------------------------------------------
+
+CREATE TABLE general_volunteer (
+    volunteer_id      INTEGER         PRIMARY KEY
+                                      REFERENCES volunteer(volunteer_id)
+                                      ON DELETE CASCADE
+                                      ON UPDATE CASCADE,
+    availability_hours INTEGER        NOT NULL
+                                      CHECK (availability_hours > 0 AND availability_hours <= 744),
+ 
+    CONSTRAINT chk_availability_positive
+        CHECK (availability_hours > 0)
+);
+ 
+COMMENT ON TABLE general_volunteer IS
+    'Subtype of volunteer. General volunteers declare monthly availability in hours.
+     Strategy B: stores only subtype attributes + PK/FK to volunteer.
+     Disjoint: a volunteer_id cannot appear in both technical_volunteer
+     and general_volunteer simultaneously.';
+
+-- ============================================================
+-- BLOCK 3: TABLES WITH FKs TO BLOCK 1
 -- ============================================================
 
 CREATE TABLE zone (
@@ -120,7 +167,7 @@ COMMENT ON TABLE planting_event IS
      species breakdown is completed in event_species.';
 
 -- ============================================================
--- BLOCK 3: N:M INTERMEDIATE TABLES
+-- BLOCK 4: N:M INTERMEDIATE TABLES
 -- ============================================================
 
 CREATE TABLE event_species (
@@ -170,7 +217,7 @@ COMMENT ON TABLE participation IS
      Surrogate PK allows future tables to reference this record.';
 
 -- ============================================================
--- BLOCK 4: MONITORING
+-- BLOCK 5: MONITORING
 -- References composite FK from event_species.
 -- Must be created AFTER event_species.
 -- ============================================================
@@ -201,7 +248,7 @@ COMMENT ON TABLE monitoring IS
      NUMERIC(5,2) used instead of FLOAT to avoid floating-point imprecision.';
 
 -- ============================================================
--- BLOCK 5: MULTIVALUED ATTRIBUTE
+-- BLOCK 6: MULTIVALUED ATTRIBUTE
 -- ============================================================
 
 CREATE TABLE volunteer_certification (
@@ -221,3 +268,35 @@ COMMENT ON TABLE volunteer_certification IS
     'Certifications held by volunteers — multivalued attribute of volunteer.
      Composite PK prevents duplicate certifications per volunteer.
      ON DELETE CASCADE: if a volunteer is deleted, their certifications go too.';
+
+-- ============================================================
+-- TRIGGER: monitoring_date cannot be before event_date
+-- ============================================================
+ 
+CREATE OR REPLACE FUNCTION fn_check_monitoring_date()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_event_date DATE;
+BEGIN
+    SELECT pe.event_date INTO v_event_date
+    FROM planting_event pe
+    JOIN event_species es ON pe.event_id = es.event_id
+    WHERE es.event_id = NEW.event_id
+      AND es.species_id = NEW.species_id
+    LIMIT 1;
+ 
+    IF NEW.monitoring_date < v_event_date THEN
+        RAISE EXCEPTION
+            'monitoring_date (%) cannot be before event_date (%)',
+            NEW.monitoring_date, v_event_date;
+    END IF;
+ 
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+ 
+CREATE TRIGGER trg_monitoring_date_valid
+    BEFORE INSERT OR UPDATE ON monitoring
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_check_monitoring_date();
+ 

@@ -84,55 +84,101 @@ Create separate table with FK to the owning entity.
 ### Step 7 — N-ary Relationships
 None in this system.
 
+### Step 8 — Specialization / Generalization
+VOLUNTEER specializes into TECHNICAL_VOLUNTEER and GENERAL_VOLUNTEER.
+Constraint: Total + Disjoint.
+ 
+Strategy B used: each subtype table stores only its own attributes
+plus a PK/FK that references the supertype (VOLUNTEER).
+ 
+    TECHNICAL_VOLUNTEER(
+      volunteer_id PK FK -> VOLUNTEER(volunteer_id),
+      specialty,
+      certification_level
+    )
+    Technical volunteers have a defined specialty (e.g. Botanist, Field
+    Coordinator) and a certification level (entry, intermediate, expert).
+ 
+    GENERAL_VOLUNTEER(
+      volunteer_id PK FK -> VOLUNTEER(volunteer_id),
+      availability_hours
+    )
+    General volunteers declare monthly availability in hours.
+ 
+Why Strategy B:
+- VOLUNTEER already has data and relationships — Strategy A (single table
+  with nullable subtype columns) would require nullable columns for all
+  existing records.
+- Strategy B keeps the supertype clean and the subtype data separate,
+  making subtype-specific queries simple and fast.
+- ON DELETE CASCADE on both subtype FKs: deleting a volunteer
+  automatically removes their subtype record.
+Total constraint (not enforced at DB level):
+Every volunteer must appear in exactly one subtype table.
+This is enforced by application logic and data insertion procedures.
+ 
+Disjoint constraint (enforced at DB level):
+A volunteer_id cannot appear in both TECHNICAL_VOLUNTEER and
+GENERAL_VOLUNTEER simultaneously because each subtype table has
+volunteer_id as PRIMARY KEY — a PK cannot be duplicated within a table,
+and the same volunteer_id cannot exist in both tables at once without
+a cross-table constraint (enforced by application logic).
+ 
 ---
-
-## Complete Relational Schema
-
+ 
+## Complete Relational Schema (Final)
+ 
     ORGANIZATION(org_id PK, name, country, founded_date, website)
-
+ 
     ZONE(zone_id PK, name, region, area_hectares, latitude, longitude,
          org_id FK -> ORGANIZATION)
-
+ 
     SPECIES(species_id PK, scientific_name, common_name, native_region, growth_rate)
-
+ 
     PLANTING_EVENT(event_id PK, event_date, name, weather_conditions, total_trees,
                    zone_id FK -> ZONE)
-
+ 
     VOLUNTEER(volunteer_id PK, dni, name, email, phone, join_date)
-
+ 
+    TECHNICAL_VOLUNTEER(volunteer_id PK FK -> VOLUNTEER,
+                        specialty, certification_level)
+ 
+    GENERAL_VOLUNTEER(volunteer_id PK FK -> VOLUNTEER,
+                      availability_hours)
+ 
     EVENT_SPECIES(event_id FK -> PLANTING_EVENT, species_id FK -> SPECIES,
                   trees_planted, PK(event_id, species_id))
-
+ 
     PARTICIPATION(participation_id PK, event_id FK -> PLANTING_EVENT,
                   volunteer_id FK -> VOLUNTEER, role, hours_worked,
                   UNIQUE(event_id, volunteer_id))
-
+ 
     MONITORING(monitoring_id PK, monitoring_date, survival_rate, notes,
                event_id FK -> EVENT_SPECIES, species_id FK -> EVENT_SPECIES)
-
+ 
     VOLUNTEER_CERTIFICATION(volunteer_id FK -> VOLUNTEER, certification,
                             year_obtained, PK(volunteer_id, certification))
-
-Total: 9 tables
-
+ 
+Total: 11 tables
+ 
 ---
-
+ 
 ## Design Decisions
-
+ 
 1. EVENT_SPECIES uses composite PK (event_id, species_id) because
    MONITORING references it with a composite FK. A surrogate PK would
    not enforce the constraint that only planted species can be monitored.
-
 2. PARTICIPATION uses surrogate PK (participation_id) to allow future
    tables to reference individual participation records cleanly.
-
 3. MONITORING uses a composite FK (event_id, species_id) referencing
    EVENT_SPECIES to enforce business rule BR06: monitoring can only
    target species that were actually planted in a given event.
-
 4. VOLUNTEER_CERTIFICATION uses composite PK (volunteer_id, certification)
    to prevent a volunteer from holding duplicate certification records.
-
-5. total_trees in PLANTING_EVENT is valid denormalization.
-   Field coordinators record the total count first; species breakdown
-   is added separately via EVENT_SPECIES. See Phase 3 design decisions.
+5. total_trees in PLANTING_EVENT is valid denormalization. Field
+   coordinators record the total count first; species breakdown is added
+   separately via EVENT_SPECIES.
+6. TECHNICAL_VOLUNTEER and GENERAL_VOLUNTEER use Strategy B (subtype tables)
+   rather than Strategy A (single table with discriminator) to keep the
+   supertype clean and avoid nullable columns for subtype-specific attributes.
+ 

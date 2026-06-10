@@ -113,3 +113,62 @@ INSERT INTO monitoring (event_id, species_id, monitoring_date, survival_rate, no
     (2, 4, '2026-05-20', 78.50, 'Partial loss due to flooding in lower area'),
     (3, 1, '2026-06-05', 90.00, 'Recovery after initial transplant shock'),
     (4, 2, '2026-04-10', 85.00, 'Good conditions, dry season favorable for caoba');
+	
+-- ============================================================
+-- BLOCK 10: SPECIALIZATION DATA
+-- Assign each existing volunteer to one subtype (Total constraint)
+-- Disjoint: no volunteer appears in both tables
+--
+-- Technical volunteers: those with formal technical roles + certifications
+-- General volunteers: those with general participation roles
+-- ============================================================
+ 
+-- TECHNICAL VOLUNTEERS
+-- Carlos Quispe (volunteer_id=1): Team Leader, has Reforestation + First Aid certs
+INSERT INTO technical_volunteer (volunteer_id, specialty, certification_level)
+VALUES (1, 'Reforestation Specialist', 'expert');
+ 
+-- Maria Lopez (volunteer_id=2): Team Leader, has Environmental Education + Reforestation
+INSERT INTO technical_volunteer (volunteer_id, specialty, certification_level)
+VALUES (2, 'Environmental Educator', 'intermediate');
+ 
+-- Ana Torres (volunteer_id=3): Planter, has First Aid cert
+INSERT INTO technical_volunteer (volunteer_id, specialty, certification_level)
+VALUES (3, 'Field Medic', 'entry');
+ 
+-- GENERAL VOLUNTEERS
+-- Luis Mamani (volunteer_id=4): Logistics, no certifications
+INSERT INTO general_volunteer (volunteer_id, availability_hours)
+VALUES (4, 40);
+ 
+-- Rosa Flores (volunteer_id=5): Planter, no certifications
+INSERT INTO general_volunteer (volunteer_id, availability_hours)
+VALUES (5, 24);
+ 
+-- ============================================================
+-- VERIFICATION QUERIES
+-- ============================================================
+ 
+-- All volunteers with their subtype
+SELECT
+    v.name,
+    v.dni,
+    CASE
+        WHEN tv.volunteer_id IS NOT NULL THEN 'Technical'
+        WHEN gv.volunteer_id IS NOT NULL THEN 'General'
+        ELSE 'UNASSIGNED — violates Total constraint'
+    END AS subtype,
+    tv.specialty,
+    tv.certification_level,
+    gv.availability_hours
+FROM volunteer v
+LEFT JOIN technical_volunteer tv ON v.volunteer_id = tv.volunteer_id
+LEFT JOIN general_volunteer gv ON v.volunteer_id = gv.volunteer_id
+ORDER BY v.name;
+ 
+-- Verify disjoint: should return 0 rows (no volunteer in both subtypes)
+SELECT v.name
+FROM volunteer v
+JOIN technical_volunteer tv ON v.volunteer_id = tv.volunteer_id
+JOIN general_volunteer gv ON v.volunteer_id = gv.volunteer_id;
+ 
