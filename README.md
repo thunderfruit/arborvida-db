@@ -73,9 +73,9 @@ reporting on campaign effectiveness.
     │   ├── 03_phase3_conceptual.md      Phase 3: Conceptual design
     │   ├── 04_phase4_logical.md         Phase 4: Logical design (Navathe)
     │   ├── 05_phase5_physical.md        Phase 5: Physical design
-    │   ├── 06_normalization.md          Unit 3: 3NF justification
-    │   ├── 07_relational_algebra.md     Unit 3: Relational algebra
-    │   └── 08_relational_calculus.md    Unit 3: Relational calculus (TRC)
+    │   ├── 06_normalization.md          3NF justification
+    │   ├── 07_relational_algebra.md     Relational algebra
+    │   └── 08_relational_calculus.md    Relational calculus (TRC)
     ├── diagrams/
     │   └── er_diagram.jpg               Crow's Foot ER diagram
     ├── sql/
@@ -158,7 +158,7 @@ Step 5 - Create users and roles: run sql/04_users_permissions.sql
 | 6. Implementation | Data population and integrity verification | sql/02_insert_data.sql |
 | 7. Maintenance | Users, permissions, backup | sql/04_users_permissions.sql |
 
-## Unit 3 Additions
+## Additions
 
 | Document | Description |
 |---|---|
