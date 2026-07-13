@@ -4,9 +4,10 @@ A complete relational database design and implementation project for a
 fictional environmental foundation managing reforestation campaigns across
 Latin America.
 
-Built following the complete database lifecycle: from problem statement
-through conceptual design, logical mapping, physical implementation,
-and database administration.
+Built following the complete database lifecycle across two units:
+Unit 2 covered conceptual, logical, physical design and implementation.
+Unit 3 adds normalization justification, relational algebra, relational
+calculus, and extended queries.
 
 ---
 
@@ -54,22 +55,12 @@ reporting on campaign effectiveness.
 
 - VOLUNTEER specializes into TECHNICAL_VOLUNTEER and GENERAL_VOLUNTEER
   using Strategy B (subtype tables), with Total + Disjoint constraints.
-
-- EVENT_SPECIES uses a composite PK (event_id, species_id) because
-  MONITORING references it with a composite FK, enforcing that only
-  planted species can be monitored.
-
-- PARTICIPATION uses a surrogate PK to allow future tables to
-  reference individual participation records cleanly.
-
-- survival_rate and area_hectares use NUMERIC instead of FLOAT
-  to avoid floating-point imprecision in field measurements.
-
-- All FKs on historical data use ON DELETE RESTRICT to prevent
-  accidental deletion of reforestation records.
-
+- EVENT_SPECIES uses composite PK (event_id, species_id) enforcing that
+  only planted species can be monitored (BR-06).
+- All FKs on historical data use ON DELETE RESTRICT.
 - Trigger trg_monitoring_date_valid enforces semantic integrity:
-  monitoring_date cannot be earlier than the planting event_date.
+  monitoring_date cannot be earlier than event_date.
+- All 11 tables are in 3NF (see docs/06_normalization.md).
 
 ---
 
@@ -80,14 +71,17 @@ reporting on campaign effectiveness.
     │   ├── 01_phase1_planning.md        Phase 1: Planning
     │   ├── 02_phase2_requirements.md    Phase 2: Requirements analysis
     │   ├── 03_phase3_conceptual.md      Phase 3: Conceptual design
-    │   ├── 04_phase4_logical.md         Phase 4: Logical design
-    │   └── 05_phase5_physical.md        Phase 5: Physical design
+    │   ├── 04_phase4_logical.md         Phase 4: Logical design (Navathe)
+    │   ├── 05_phase5_physical.md        Phase 5: Physical design
+    │   ├── 06_normalization.md          Unit 3: 3NF justification
+    │   ├── 07_relational_algebra.md     Unit 3: Relational algebra
+    │   └── 08_relational_calculus.md    Unit 3: Relational calculus (TRC)
     ├── diagrams/
     │   └── er_diagram.jpg               Crow's Foot ER diagram
     ├── sql/
-    │   ├── 01_create_tables.sql         DDL — all 11 tables + trigger
+    │   ├── 01_create_tables.sql         DDL: 11 tables + trigger
     │   ├── 02_insert_data.sql           Sample data
-    │   ├── 03_verification_queries.sql  Business queries + constraint tests
+    │   ├── 03_verification_queries.sql  Queries: algebra, calculus, analytical
     │   ├── 04_users_permissions.sql     Roles and users
     │   └── 05_backup.sh                 Backup script
     └── backup/
@@ -105,48 +99,50 @@ Step 2 - Connect to arborvida and run sql/01_create_tables.sql
 
 Step 3 - Load sample data: run sql/02_insert_data.sql
 
-Step 4 - Create users and roles: run sql/04_users_permissions.sql
+Step 4 - Run queries: run sql/03_verification_queries.sql
 
-Step 5 - Run verification queries: run sql/03_verification_queries.sql
-    Section 1-2 should succeed.
-    Section 3 tests should all fail (constraint enforcement).
+Step 5 - Create users and roles: run sql/04_users_permissions.sql
 
 ---
 
-## Sample Queries
+## Key Queries
 
-Total trees planted per organization:
+**Total trees planted and survival rate per organization:**
 
     SET search_path TO rfo;
-    SELECT o.name, SUM(pe.total_trees) AS total_trees
+    SELECT o.name, SUM(es.trees_planted) AS total_trees,
+           ROUND(AVG(m.survival_rate), 2) AS avg_survival
     FROM organization o
-    JOIN zone z ON o.org_id = z.org_id
+    JOIN zone z            ON o.org_id = z.org_id
     JOIN planting_event pe ON z.zone_id = pe.zone_id
-    GROUP BY o.name
-    ORDER BY total_trees DESC;
+    JOIN event_species es  ON pe.event_id = es.event_id
+    LEFT JOIN monitoring m ON es.event_id = m.event_id
+                          AND es.species_id = m.species_id
+    GROUP BY o.org_id, o.name;
 
-Average survival rate per species:
+**Volunteers who have never participated (NOT EXISTS):**
 
-    SELECT s.common_name, ROUND(AVG(m.survival_rate), 2) AS avg_survival
-    FROM species s
-    JOIN monitoring m ON s.species_id = m.species_id
-    GROUP BY s.common_name
-    ORDER BY avg_survival DESC;
+    SELECT v.name FROM volunteer v
+    WHERE NOT EXISTS (
+        SELECT 1 FROM participation p
+        WHERE p.volunteer_id = v.volunteer_id
+    );
 
-Volunteers with their subtype (specialization query):
+**Full report with survival status label:**
 
-    SELECT v.name,
-           CASE
-               WHEN tv.volunteer_id IS NOT NULL THEN 'Technical'
-               WHEN gv.volunteer_id IS NOT NULL THEN 'General'
-           END AS subtype,
-           tv.specialty,
-           tv.certification_level,
-           gv.availability_hours
-    FROM volunteer v
-    LEFT JOIN technical_volunteer tv ON v.volunteer_id = tv.volunteer_id
-    LEFT JOIN general_volunteer gv ON v.volunteer_id = gv.volunteer_id
-    ORDER BY v.name;
+    SELECT pe.name AS event, s.common_name, m.survival_rate,
+        CASE
+            WHEN m.survival_rate IS NULL THEN 'Not monitored'
+            WHEN m.survival_rate >= 90   THEN 'Excellent'
+            WHEN m.survival_rate >= 80   THEN 'Good'
+            WHEN m.survival_rate >= 70   THEN 'At risk'
+            ELSE                              'Critical'
+        END AS survival_status
+    FROM planting_event pe
+    JOIN event_species es  ON pe.event_id = es.event_id
+    JOIN species s         ON es.species_id = s.species_id
+    LEFT JOIN monitoring m ON es.event_id = m.event_id
+                          AND es.species_id = m.species_id;
 
 ---
 
@@ -155,12 +151,21 @@ Volunteers with their subtype (specialization query):
 | Phase | Description | Output |
 |---|---|---|
 | 1. Planning | Project scope, objectives, feasibility | docs/01_phase1_planning.md |
-| 2. Requirements | Functional/non-functional requirements, business rules | docs/02_phase2_requirements.md |
+| 2. Requirements | Functional requirements, business rules | docs/02_phase2_requirements.md |
 | 3. Conceptual Design | ER diagram in Crow's Foot notation | diagrams/er_diagram.jpg |
-| 4. Logical Design | Relational schema via Navathe 7-step mapping | docs/04_phase4_logical.md |
-| 5. Physical Design | SQL DDL with data types, constraints, trigger | docs/05_phase5_physical.md |
+| 4. Logical Design | Relational schema via Navathe 7-step | docs/04_phase4_logical.md |
+| 5. Physical Design | SQL DDL with data types and constraints | docs/05_phase5_physical.md |
 | 6. Implementation | Data population and integrity verification | sql/02_insert_data.sql |
 | 7. Maintenance | Users, permissions, backup | sql/04_users_permissions.sql |
+
+## Unit 3 Additions
+
+| Document | Description |
+|---|---|
+| docs/06_normalization.md | 3NF justification for all 11 tables |
+| docs/07_relational_algebra.md | 9 algebra expressions with SQL equivalents |
+| docs/08_relational_calculus.md | 7 TRC expressions with SQL equivalents |
+| sql/03_verification_queries.sql | Extended queries: algebra, calculus, analytical, DML |
 
 ---
 
